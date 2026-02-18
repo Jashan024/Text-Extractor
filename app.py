@@ -31,11 +31,12 @@ def extract():
         return jsonify({"error": "Invalid request — JSON with 'text' key required"}), 400
 
     text = data["text"]
+    source = data.get("source", "indeed")
     if not text.strip():
         return jsonify({"error": "No text provided"}), 400
 
     try:
-        results = extract_entities(text)
+        results = extract_entities(text, source=source)
     except Exception as exc:
         app.logger.exception("Extraction failed")
         return jsonify({"error": "Extraction failed. Please check your input."}), 500

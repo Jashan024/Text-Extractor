@@ -121,7 +121,196 @@ def find_next_nonblank(lines, start):
     return idx
 
 
-def extract_entities(text):
+def extract_entities(text, source='indeed'):
+    """Route to the correct parser based on source."""
+    if source == 'signalhire':
+        return extract_signalhire(text)
+    return extract_indeed(text)
+
+
+# =========================================================================
+# SignalHire Parser
+# =========================================================================
+
+# Profile start: "* X" where X is a single capital letter
+SH_PROFILE_START = re.compile(r'^\*\s+[A-Z]$')
+
+# Title line: ends with " at"
+SH_TITLE_LINE = re.compile(r'^(.+)\s+at$', re.IGNORECASE)
+
+# Company line: wrapped in double underscores
+SH_COMPANY_LINE = re.compile(r'^__(.+)__$')
+
+# Location line: "City, State, United States" or "City, State Area, United States"
+SH_LOCATION_LINE = re.compile(
+    r'^[A-Za-z .\'()-]+,\s*[A-Za-z ]+(?:\s+Area)?,\s*United States$'
+)
+
+# Noise patterns to skip
+SH_SKIP_PATTERNS = [
+    re.compile(r'^Watched$', re.IGNORECASE),
+    re.compile(r'^\d+\s+years?\s+exp$', re.IGNORECASE),
+    re.compile(r'^Prev$', re.IGNORECASE),
+    re.compile(r'^Skills$', re.IGNORECASE),
+    re.compile(r'^\s*\*\s*$'),                # indented bullet artifacts
+    re.compile(r'\d+\s+more$'),               # "2 more", "7 more" etc.
+    re.compile(r'^Standard Search', re.IGNORECASE),
+    re.compile(r'^View tips', re.IGNORECASE),
+    re.compile(r'^Saved searches', re.IGNORECASE),
+    re.compile(r'^Search history', re.IGNORECASE),
+    re.compile(r'^Location$', re.IGNORECASE),
+    re.compile(r'^Radius:', re.IGNORECASE),
+    re.compile(r'^Title$', re.IGNORECASE),
+    re.compile(r'^Current and Past', re.IGNORECASE),
+    re.compile(r'^Manage Profiles', re.IGNORECASE),
+    re.compile(r'^Show "', re.IGNORECASE),
+    re.compile(r'^Exclude "', re.IGNORECASE),
+    re.compile(r'^Revealed', re.IGNORECASE),
+    re.compile(r'^Not Revealed', re.IGNORECASE),
+    re.compile(r'^All Revealed', re.IGNORECASE),
+    re.compile(r'^Search in', re.IGNORECASE),
+    re.compile(r'^Advanced search', re.IGNORECASE),
+    re.compile(r'^Company$', re.IGNORECASE),
+    re.compile(r'^Years of work', re.IGNORECASE),
+    re.compile(r'^Industry$', re.IGNORECASE),
+]
+
+
+def is_sh_skip(line):
+    """Check if a line is SignalHire noise/metadata."""
+    stripped = line.strip()
+    if not stripped:
+        return True
+    for pat in SH_SKIP_PATTERNS:
+        if pat.search(stripped):
+            return True
+    return False
+
+
+def extract_signalhire(text):
+    """
+    Extract names, locations, and job titles from SignalHire profile text.
+
+    Each profile follows this structure:
+        * X                          (single-letter initial — profile start)
+        Full Name
+        [Watched]                    (optional)
+        [Job Title at]               (optional — title ends with " at")
+        [__Company Name__]           (optional — wrapped in double underscores)
+        City, State, United States   (location)
+        [N years exp]                (optional metadata)
+        [Prev]                       (optional)
+        [previous jobs ...]          (optional)
+        [Skills]                     (optional)
+        [skills list ...]            (optional)
+    """
+    lines = text.split('\n')
+    people = []
+    i = 0
+
+    # Skip header/filter noise at the top until first profile marker
+    while i < len(lines):
+        line = lines[i].strip()
+        if SH_PROFILE_START.match(line):
+            break
+        i += 1
+
+    while i < len(lines):
+        line = lines[i].strip()
+
+        # --- Detect profile start: "* X" ---
+        if SH_PROFILE_START.match(line):
+            i += 1  # skip the "* X" line
+
+            # Next non-blank line is the NAME
+            while i < len(lines) and not lines[i].strip():
+                i += 1
+            if i >= len(lines):
+                break
+
+            name = lines[i].strip()
+            i += 1
+
+            title = ''
+            location = ''
+
+            # Walk through the remaining lines of this profile
+            while i < len(lines):
+                curr = lines[i].strip()
+
+                # If we hit the next profile, stop
+                if SH_PROFILE_START.match(curr):
+                    break
+
+                # Skip blanks
+                if not curr:
+                    i += 1
+                    continue
+
+                # Skip "Watched"
+                if curr.lower() == 'watched':
+                    i += 1
+                    continue
+
+                # Title line: "Something at"
+                title_match = SH_TITLE_LINE.match(curr)
+                if title_match and not title:
+                    title = title_match.group(1).strip()
+                    i += 1
+                    continue
+
+                # Company line: "__Company__" — skip (we capture title, not company)
+                if SH_COMPANY_LINE.match(curr):
+                    i += 1
+                    continue
+
+                # Location line
+                if SH_LOCATION_LINE.match(curr) and not location:
+                    location = curr
+                    i += 1
+                    # After location, skip remaining metadata until next profile
+                    while i < len(lines):
+                        rest = lines[i].strip()
+                        if SH_PROFILE_START.match(rest):
+                            break
+                        i += 1
+                    break
+
+                # Skip known noise
+                if is_sh_skip(curr):
+                    i += 1
+                    continue
+
+                # Skip skills/prev content lines (comma-heavy lines)
+                if ',' in curr and len(curr.split(',')) >= 3:
+                    i += 1
+                    continue
+
+                # Unknown line — skip
+                i += 1
+
+            # Build the person
+            if name:
+                person = {
+                    'name': name,
+                    'location': location,
+                    'titles': [title] if title else [],
+                }
+                people.append(person)
+
+            continue
+
+        i += 1
+
+    # Build output (same format as Indeed parser)
+    return _build_output(people)
+
+
+# =========================================================================
+# Indeed Parser
+# =========================================================================
+
+def extract_indeed(text):
     """
     Extract names, locations, and job titles from structured profile text.
 
@@ -254,7 +443,15 @@ def extract_entities(text):
     if current_person:
         people.append(current_person)
 
-    # Build output
+    return _build_output(people)
+
+
+# =========================================================================
+# Shared output builder
+# =========================================================================
+
+def _build_output(people):
+    """Build the standard output dict from a list of person dicts."""
     names = []
     locations = []
     titles = []

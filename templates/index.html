@@ -55,8 +55,9 @@
                     </svg>
                     Source
                 </label>
-                <select id="source-select" class="source-select">
+                <select id="source-select" class="source-select" onchange="updatePlaceholder()">
                     <option value="indeed" selected>📋 Indeed</option>
+                    <option value="signalhire">🔍 SignalHire</option>
                 </select>
             </div>
             <textarea id="input-text" placeholder="Paste structured profile text here...&#10;&#10;Example:&#10;Elizabeth Rupert&#10;Montandon, PA&#10;Relevant Work Experience&#10;Register&#10;The GIANT Company, 2025 - Present"></textarea>
@@ -170,7 +171,7 @@
                 const response = await fetch('/extract', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text })
+                    body: JSON.stringify({ text, source: document.getElementById('source-select').value })
                 });
 
                 if (!response.ok) {
@@ -312,6 +313,16 @@
             document.getElementById('error').classList.add('hidden');
             extractedPeople = [];
             document.getElementById('input-text').focus();
+        }
+
+        function updatePlaceholder() {
+            const source = document.getElementById('source-select').value;
+            const ta = document.getElementById('input-text');
+            if (source === 'signalhire') {
+                ta.placeholder = 'Paste SignalHire search results here...\n\nExample:\n* S\nSusan Grimes\nDentist at\n__Shelburne Village Dentistry__\nShelburne, Vermont, United States\n37 years exp';
+            } else {
+                ta.placeholder = 'Paste structured profile text here...\n\nExample:\nElizabeth Rupert\nMontandon, PA\nRelevant Work Experience\nRegister\nThe GIANT Company, 2025 - Present';
+            }
         }
 
         // Ctrl+Enter to extract
