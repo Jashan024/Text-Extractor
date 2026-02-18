@@ -58,6 +58,7 @@
                 <select id="source-select" class="source-select" onchange="updatePlaceholder()">
                     <option value="indeed" selected>📋 Indeed</option>
                     <option value="signalhire">🔍 SignalHire</option>
+                    <option value="linkedin_xray">🔗 LinkedIn X-ray</option>
                 </select>
             </div>
             <textarea id="input-text" placeholder="Paste structured profile text here...&#10;&#10;Example:&#10;Elizabeth Rupert&#10;Montandon, PA&#10;Relevant Work Experience&#10;Register&#10;The GIANT Company, 2025 - Present"></textarea>
@@ -320,6 +321,8 @@
             const ta = document.getElementById('input-text');
             if (source === 'signalhire') {
                 ta.placeholder = 'Paste SignalHire search results here...\n\nExample:\n* S\nSusan Grimes\nDentist at\n__Shelburne Village Dentistry__\nShelburne, Vermont, United States\n37 years exp';
+            } else if (source === 'linkedin_xray') {
+                ta.placeholder = 'Paste LinkedIn X-ray (Google) search results here...\n\nExample:\nDana J. Ellis BS,RN - Registered Nurse at The University of ...\nLinkedIn \u00b7 Dana J. Ellis BS,RN\n90+ followers\nBurlington, Vermont, United States \u00b7 Med/Surg Resource Staff RN \u00b7 The University of Vermont Medical Center';
             } else {
                 ta.placeholder = 'Paste structured profile text here...\n\nExample:\nElizabeth Rupert\nMontandon, PA\nRelevant Work Experience\nRegister\nThe GIANT Company, 2025 - Present';
             }

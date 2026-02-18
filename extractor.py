@@ -125,6 +125,8 @@ def extract_entities(text, source='indeed'):
     """Route to the correct parser based on source."""
     if source == 'signalhire':
         return extract_signalhire(text)
+    if source == 'linkedin_xray':
+        return extract_linkedin_xray(text)
     return extract_indeed(text)
 
 
@@ -303,6 +305,386 @@ def extract_signalhire(text):
         i += 1
 
     # Build output (same format as Indeed parser)
+    return _build_output(people)
+
+
+# =========================================================================
+# LinkedIn X-ray Parser
+# =========================================================================
+
+# Profile start: "LinkedIn · Name" or "LinkedIn · Name credentials"
+LI_PROFILE_LINE = re.compile(r'^LinkedIn\s*[·•]\s*(.+)$')
+
+# Follower count line: "90+ followers" or "1,200 followers"
+LI_FOLLOWERS_LINE = re.compile(r'^\d[\d,]*\+?\s+followers?$', re.IGNORECASE)
+
+# Header line: "Name - Title at Company..." (Google search result title)
+LI_HEADER_LINE = re.compile(r'^(.+?)\s+-\s+(.+)$')
+
+# Credential suffixes to strip from names
+LI_CREDENTIAL_PATTERN = re.compile(
+    r'[\s,]+(BS|BSN|MSN|MBA|RN|LPN|MD|DO|NP|CRNP|DNP|PhD|PharmD|'
+    r'MS|MA|BA|APRN|FNP|FNP-C|FNP-BC|ACNP|CNS|CRNA|PA-C|PA|'
+    r'SHRM-CP|SHRM-SCP|CPA|JD|DDS|DMD|OD|DC|DPT|DPM|'
+    r'MPH|MHA|MEd|EdD|LCSW|LMSW|LPC|LMFT|BCBA|OTR|'
+    r'B\.?S\.?|M\.?S\.?|B\.?A\.?|M\.?A\.?|M\.?B\.?A\.?|'
+    r'Ph\.?D\.?)'
+    r'([\s,]+(BS|BSN|MSN|MBA|RN|LPN|MD|DO|NP|CRNP|DNP|PhD|PharmD|'
+    r'MS|MA|BA|APRN|FNP|FNP-C|FNP-BC|ACNP|CNS|CRNA|PA-C|PA|'
+    r'SHRM-CP|SHRM-SCP|CPA|JD|DDS|DMD|OD|DC|DPT|DPM|'
+    r'MPH|MHA|MEd|EdD|LCSW|LMSW|LPC|LMFT|BCBA|OTR|'
+    r'B\.?S\.?|M\.?S\.?|B\.?A\.?|M\.?A\.?|M\.?B\.?A\.?|'
+    r'Ph\.?D\.?))*\s*$', re.IGNORECASE
+)
+
+# US state names for location detection
+US_STATES = {
+    'alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado',
+    'connecticut', 'delaware', 'florida', 'georgia', 'hawaii', 'idaho',
+    'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana',
+    'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota',
+    'mississippi', 'missouri', 'montana', 'nebraska', 'nevada',
+    'new hampshire', 'new jersey', 'new mexico', 'new york',
+    'north carolina', 'north dakota', 'ohio', 'oklahoma', 'oregon',
+    'pennsylvania', 'rhode island', 'south carolina', 'south dakota',
+    'tennessee', 'texas', 'utah', 'vermont', 'virginia', 'washington',
+    'west virginia', 'wisconsin', 'wyoming', 'district of columbia',
+}
+
+
+def strip_li_credentials(name):
+    """Strip credential suffixes from a LinkedIn name."""
+    return LI_CREDENTIAL_PATTERN.sub('', name).strip().rstrip(',').strip()
+
+
+def extract_li_location(text):
+    """
+    Extract a US location from a middle-dot-separated line or plain text.
+    Looks for "City, State, United States" or "City, State" patterns.
+    """
+    # Clean up __Read more__ artifacts and trailing dots
+    cleaned = re.sub(r'_+Read_*\s*more_*', '', text).strip().rstrip('.')
+
+    # Also try to find location via regex search in the full text
+    # (handles cases where location is embedded in description without middle dots)
+    # "City, State, United States" embedded anywhere
+    embedded = re.search(
+        r'([A-Z][A-Za-z .\'()-]+,\s*[A-Z][A-Za-z ]+,\s*United States)',
+        cleaned
+    )
+
+    # Split by middle dot separator AND by ". " (sentence separator)
+    segments = re.split(r'\s*[·•]\s*|(?<=\.)\s+', cleaned)
+    for seg in segments:
+        seg = seg.strip().rstrip('.')
+        if not seg:
+            continue
+        # "City, State, United States"
+        m = re.match(
+            r'^([A-Za-z][A-Za-z .\'()-]+),\s*([A-Za-z][A-Za-z ]+?),\s*United States$',
+            seg
+        )
+        if m:
+            state_part = m.group(2).strip()
+            if state_part.lower() in US_STATES:
+                return seg
+        # "City, State" (2-letter code) — but NOT credentials like "BSN, RN"
+        m2 = re.match(
+            r'^([A-Za-z][A-Za-z .\'()-]+),\s*([A-Z]{2})$',
+            seg
+        )
+        if m2:
+            city_part = m2.group(1).strip()
+            # Filter out credential combos and name+credential patterns
+            # Real city names don't end with uppercase credential words
+            if (not re.match(r'^[A-Z]{2,5}$', city_part) and
+                    not re.search(r'\b[A-Z]{2,5}$', city_part)):
+                return seg
+        # "City, StateName" (full state name, no "United States")
+        m3 = re.match(
+            r'^([A-Za-z][A-Za-z .\'()-]+),\s*([A-Za-z][A-Za-z ]+?)$',
+            seg
+        )
+        if m3:
+            state_part = m3.group(2).strip()
+            if state_part.lower() in US_STATES:
+                return seg
+
+    # Fallback: try embedded location from full text
+    if embedded:
+        loc = embedded.group(1).strip()
+        # Verify state part
+        parts = loc.split(',')
+        if len(parts) >= 2:
+            state_part = parts[-2].strip() if 'United States' in parts[-1] else parts[-1].strip()
+            if state_part.lower() in US_STATES:
+                return loc
+
+    return ''
+
+
+def extract_li_title_from_header(header_line):
+    """
+    Extract the job title from a Google search result header line.
+    Format: "Name - Title at Company..."
+    Returns title or empty string.
+    Only extracts when " at " is present (otherwise after-dash is typically a company).
+    """
+    m = LI_HEADER_LINE.match(header_line)
+    if not m:
+        return ''
+    after_dash = m.group(2).strip()
+    # Remove trailing "..." ellipsis
+    after_dash = re.sub(r'\s*\.{3}\s*$', '', after_dash)
+    # Extract title: everything before " at " (case-insensitive)
+    title_match = re.match(r'^(.+?)\s+at\s+', after_dash, re.IGNORECASE)
+    if title_match:
+        return title_match.group(1).strip()
+    # If no " at ", check if it looks like a standalone title (not a company or credentials)
+    # Companies: "The University of Vermont", "HCA Florida Ocala Hospital"
+    # Credentials only: "BSN, RN", "MSN, BSN, RN"
+    lower = after_dash.lower()
+    # Skip company names
+    if lower.startswith('the ') or any(kw in lower for kw in LI_COMPANY_KEYWORDS):
+        return ''
+    # Skip pure credential strings (e.g., "BSN, RN", "MSN, BSN, RN")
+    cred_test = re.sub(r'[,\s]+', ' ', after_dash).strip()
+    cred_words = cred_test.split()
+    cred_set = {'bs', 'bsn', 'msn', 'mba', 'rn', 'lpn', 'md', 'do', 'np', 'phd',
+                'ms', 'ma', 'ba', 'aprn', 'fnp', 'cna', 'dnp', 'crnp', 'pa',
+                'pharmd', 'dds', 'dmd', 'od', 'dc', 'dpt', 'mph', 'mha'}
+    if all(w.lower().rstrip('.') in cred_set for w in cred_words):
+        return ''
+    # Check if it has title keywords
+    if any(kw in lower for kw in LI_TITLE_KEYWORDS):
+        return after_dash.strip()
+    return after_dash.strip()
+
+
+def extract_li_title_from_segments(segments_line):
+    """
+    Extract job title from the middle-dot-separated info line.
+    The info line looks like:
+    "City, State, United States · Title · Company"
+    or "Title · Company"
+    Returns title or empty string.
+    """
+    segments = re.split(r'\s*[·•]\s*', segments_line)
+    for seg in segments:
+        seg = seg.strip().rstrip('.')
+        # Skip location-like segments
+        if re.match(r'^[A-Za-z][A-Za-z .\'()-]+,\s*[A-Za-z]', seg):
+            continue
+        # Skip segments that look like company names (contain "University",
+        # "Hospital", "Center", "Health", etc.)
+        # But first check if it's a title — titles often have "Nurse", "Dentist", etc.
+        if seg and not re.search(r'^\d', seg):
+            return seg
+    return ''
+
+
+def is_li_next_profile(lines, i):
+    """Check if line i starts a new LinkedIn profile (header + LinkedIn · line)."""
+    if i >= len(lines):
+        return False
+    line = lines[i].strip()
+    # Direct LinkedIn · line
+    if LI_PROFILE_LINE.match(line):
+        return True
+    # Header line followed by LinkedIn · line
+    if ' - ' in line:
+        j = i + 1
+        while j < len(lines) and not lines[j].strip():
+            j += 1
+        if j < len(lines) and LI_PROFILE_LINE.match(lines[j].strip()):
+            return True
+    return False
+
+
+LI_COMPANY_KEYWORDS = ['university', 'hospital', 'health', 'center', 'network',
+                       'medical', 'college', 'institute', 'clinic', 'corp',
+                       'inc', 'llc', 'group', 'associates', 'foundation',
+                       'healthcare', 'graphic', 'community']
+
+# Title keywords — segments containing these are likely job titles
+LI_TITLE_KEYWORDS = ['nurse', 'registered', 'dentist', 'doctor', 'physician',
+                     'therapist', 'assistant', 'technician', 'manager', 'director',
+                     'supervisor', 'coordinator', 'specialist', 'analyst', 'engineer',
+                     'developer', 'consultant', 'administrator', 'practitioner',
+                     'pharmacist', 'surgeon', 'paramedic', 'aide', 'staff',
+                     'resource', 'critical care', 'med/surg', 'licensed']
+
+
+def is_li_title_segment(seg):
+    """Check if a segment looks like a job title rather than a company or location."""
+    if not seg or len(seg) < 2:
+        return False
+    lower = seg.lower()
+    # Skip location patterns
+    if re.match(r'^[A-Za-z][A-Za-z .\'()-]+,\s*[A-Za-z]', seg):
+        return False
+    # Skip "United States" etc
+    if lower in ('united states', 'united kingdom', 'canada'):
+        return False
+    # Skip metadata-like segments
+    if lower.startswith('experience') or lower.startswith('education'):
+        return False
+    if lower.startswith('location:') or lower.startswith('view '):
+        return False
+    if 'connections on linkedin' in lower or 'profile on linkedin' in lower:
+        return False
+    if 'followers' in lower:
+        return False
+    # Check for company keywords
+    if lower.startswith('the ') or any(kw in lower for kw in LI_COMPANY_KEYWORDS):
+        # But if it also has a title keyword, it might be "Critical Care Registered Nurse"
+        if any(kw in lower for kw in LI_TITLE_KEYWORDS):
+            return True
+        return False
+    # If it has title keywords, definitely a title
+    if any(kw in lower for kw in LI_TITLE_KEYWORDS):
+        return True
+    # Short segments that are all caps/credentials — skip
+    if re.match(r'^[A-Z,.\s-]+$', seg) and len(seg) < 15:
+        return False
+    # Pure credential strings like "BSN, RN"
+    cred_set = {'bs', 'bsn', 'msn', 'mba', 'rn', 'lpn', 'md', 'do', 'np', 'phd',
+                'ms', 'ma', 'ba', 'aprn', 'fnp', 'cna', 'dnp', 'crnp', 'pa',
+                'pharmd', 'dds', 'dmd', 'od', 'dc', 'dpt', 'mph', 'mha'}
+    cred_words = re.sub(r'[,\s]+', ' ', seg).strip().split()
+    if cred_words and all(w.lower().rstrip('.') in cred_set for w in cred_words):
+        return False
+    return True
+
+
+def extract_li_title_from_info(segments_line):
+    """
+    Extract job title from the middle-dot-separated info line.
+    Segments: location · title · company  OR  title · company · etc.
+    Returns the first segment that looks like a title.
+    """
+    segments = re.split(r'\s*[·•]\s*', segments_line)
+    for seg in segments:
+        seg = seg.strip().rstrip('.')
+        if is_li_title_segment(seg):
+            return seg
+    return ''
+
+
+def extract_linkedin_xray(text):
+    """
+    Extract names, locations, and job titles from LinkedIn X-ray
+    (Google search) results.
+
+    Each profile block follows this structure:
+        Name [credentials] - Title at Company...     (header — Google result title)
+        LinkedIn · Name [credentials]                (attribution line)
+        N+ followers                                 (follower count)
+        [City, State, United States ·] Title · Company  (info line with middle dots)
+        Description snippet...__Read more__          (description — skip)
+    """
+    lines = text.split('\n')
+    people = []
+    i = 0
+
+    while i < len(lines):
+        line = lines[i].strip()
+
+        # --- Detect profile via "LinkedIn · Name" line ---
+        li_match = LI_PROFILE_LINE.match(line)
+        if li_match:
+            raw_name = li_match.group(1).strip()
+            name = strip_li_credentials(raw_name)
+
+            # Look back for the header line (previous non-blank line)
+            header_line = ''
+            j = i - 1
+            while j >= 0:
+                prev = lines[j].strip()
+                if prev:
+                    header_line = prev
+                    break
+                j -= 1
+
+            # Extract title from header line
+            title = extract_li_title_from_header(header_line)
+
+            i += 1  # move past the LinkedIn line
+
+            # Skip followers line
+            while i < len(lines):
+                curr = lines[i].strip()
+                if not curr:
+                    i += 1
+                    continue
+                if LI_FOLLOWERS_LINE.match(curr):
+                    i += 1
+                    break
+                break
+
+            # Process remaining lines for this profile (info + description)
+            location = ''
+            info_processed = False
+            while i < len(lines):
+                curr = lines[i].strip()
+                if not curr:
+                    i += 1
+                    continue
+
+                # Check if next profile starts
+                if is_li_next_profile(lines, i):
+                    break
+
+                # First non-blank line after followers is the INFO line
+                # (has middle dots with location/title/company)
+                if not info_processed:
+                    info_processed = True
+                    # Extract location from info line
+                    if not location:
+                        loc = extract_li_location(curr)
+                        if loc:
+                            location = loc
+                    # Extract title from info line segments
+                    if not title and ('·' in curr or '•' in curr):
+                        title = extract_li_title_from_info(curr)
+                    # Also handle info lines that are just "Title at Company"
+                    if not title:
+                        t_match = re.match(r'^(.+?)\s+at\s+', curr, re.IGNORECASE)
+                        if t_match:
+                            candidate = t_match.group(1).strip()
+                            # Make sure it's not "Name. Title at Company" format
+                            # by checking if it starts with the person's name
+                            if not candidate.lower().startswith(name.split()[0].lower()):
+                                title = candidate
+                    i += 1
+                    continue
+
+                # Subsequent lines are description/snippets
+                # Try to extract location from description if we still don't have one
+                if not location:
+                    loc = extract_li_location(curr)
+                    if loc:
+                        location = loc
+
+                i += 1
+
+            # Clean up title — remove trailing ellipsis
+            if title:
+                title = re.sub(r'\s*\.{3}\s*$', '', title).strip()
+
+            # Build the person
+            if name:
+                person = {
+                    'name': name,
+                    'location': location,
+                    'titles': [title] if title else [],
+                }
+                people.append(person)
+
+            continue
+
+        i += 1
+
     return _build_output(people)
 
 
