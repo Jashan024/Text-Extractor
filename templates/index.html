@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Extractor</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+                <span>DataExtractor</span>
+            </div>
+            <div class="header-hint">Ctrl + Enter to extract</div>
+        </div>
+    </header>
+
+    <main class="main">
+        <!-- Input Section -->
+        <section class="input-section">
+            <div class="section-header">
+                <h2>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    Paste Profile Data
+                </h2>
+                <button id="clear-btn" class="btn-ghost" onclick="clearAll()" title="Clear all">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                    Clear
+                </button>
+            </div>
+            <textarea id="input-text" placeholder="Paste structured profile text here...&#10;&#10;Example:&#10;Elizabeth Rupert&#10;Montandon, PA&#10;Relevant Work Experience&#10;Register&#10;The GIANT Company, 2025 - Present"></textarea>
+            <div class="input-actions">
+                <button id="extract-btn" class="btn-primary" onclick="extractData()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    Extract Data
+                </button>
+            </div>
+        </section>
+
+        <!-- Stats Cards -->
+        <section id="stats" class="stats hidden">
+            <div class="stat-card">
+                <div class="stat-icon people-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-people">0</span>
+                    <span class="stat-label">People</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon location-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-locations">0</span>
+                    <span class="stat-label">Locations</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon title-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-titles">0</span>
+                    <span class="stat-label">Titles</span>
+                </div>
+            </div>
+            <div class="stat-card stat-action">
+                <button class="btn-success" onclick="downloadCSV()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Download CSV
+                </button>
+            </div>
+        </section>
+
+        <!-- Results Table -->
+        <section id="results" class="results-section hidden">
+            <div class="table-wrapper">
+                <table id="results-table">
+                    <thead>
+                        <tr>
+                            <th class="th-num">#</th>
+                            <th class="th-name">Name</th>
+                            <th class="th-location">Location</th>
+                            <th class="th-titles">Title(s)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Error -->
+        <div id="error" class="error hidden"></div>
+    </main>
+
+    <script>
+        let extractedPeople = [];
+
+        async function extractData() {
+            const text = document.getElementById('input-text').value;
+            const btn = document.getElementById('extract-btn');
+            const results = document.getElementById('results');
+            const stats = document.getElementById('stats');
+            const error = document.getElementById('error');
+
+            if (!text.trim()) {
+                error.textContent = 'Please enter some text first.';
+                error.classList.remove('hidden');
+                results.classList.add('hidden');
+                stats.classList.add('hidden');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<svg class="spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg> Extracting...';
+            error.classList.add('hidden');
+
+            try {
+                const response = await fetch('/extract', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    throw new Error(errData.error || 'Extraction failed');
+                }
+
+                const data = await response.json();
+                extractedPeople = data.people;
+                renderTable(data.people);
+
+                // Animate stat counters
+                animateCounter('stat-people', data.people.length);
+                animateCounter('stat-locations', data.locations.length);
+                animateCounter('stat-titles', data.titles.length);
+
+                stats.classList.remove('hidden');
+                results.classList.remove('hidden');
+
+                // Smooth scroll to results
+                stats.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } catch (err) {
+                error.textContent = err.message;
+                error.classList.remove('hidden');
+                results.classList.add('hidden');
+                stats.classList.add('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Extract Data';
+            }
+        }
+
+        function animateCounter(id, target) {
+            const el = document.getElementById(id);
+            let current = 0;
+            const step = Math.max(1, Math.floor(target / 20));
+            const interval = setInterval(() => {
+                current += step;
+                if (current >= target) {
+                    current = target;
+                    clearInterval(interval);
+                }
+                el.textContent = current;
+            }, 30);
+        }
+
+        function renderTable(people) {
+            const tbody = document.getElementById('results-body');
+            tbody.innerHTML = '';
+
+            if (people.length === 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = '<td colspan="4" class="empty-msg">No profiles found. Make sure the text follows the expected format.</td>';
+                tbody.appendChild(tr);
+                return;
+            }
+
+            people.forEach((person, index) => {
+                const tr = document.createElement('tr');
+                tr.style.animationDelay = `${index * 0.02}s`;
+                tr.className = 'fade-in-row';
+
+                const tdNum = document.createElement('td');
+                tdNum.textContent = index + 1;
+                tdNum.className = 'row-num';
+
+                const tdName = document.createElement('td');
+                tdName.className = 'cell-name';
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'name-text';
+                nameSpan.textContent = person.name || '\u2014';
+                tdName.appendChild(nameSpan);
+
+                const tdLoc = document.createElement('td');
+                tdLoc.className = 'cell-location';
+                if (person.location) {
+                    tdLoc.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.5;vertical-align:-2px;margin-right:4px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>' + person.location;
+                } else {
+                    tdLoc.textContent = '\u2014';
+                }
+
+                const tdTitles = document.createElement('td');
+                tdTitles.className = 'cell-titles';
+                if (person.titles.length > 0) {
+                    person.titles.forEach(title => {
+                        const span = document.createElement('span');
+                        span.className = 'title-tag';
+                        span.textContent = title;
+                        tdTitles.appendChild(span);
+                    });
+                } else {
+                    tdTitles.innerHTML = '<span class="no-title">\u2014</span>';
+                }
+
+                tr.appendChild(tdNum);
+                tr.appendChild(tdName);
+                tr.appendChild(tdLoc);
+                tr.appendChild(tdTitles);
+                tbody.appendChild(tr);
+            });
+        }
+
+        function downloadCSV() {
+            if (extractedPeople.length === 0) return;
+
+            const escapeCSV = (val) => {
+                if (!val) return '';
+                const str = String(val);
+                if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                    return '"' + str.replace(/"/g, '""') + '"';
+                }
+                return str;
+            };
+
+            const rows = [['#', 'Name', 'Location', 'Title(s)']];
+            extractedPeople.forEach((person, i) => {
+                rows.push([
+                    i + 1,
+                    escapeCSV(person.name),
+                    escapeCSV(person.location),
+                    escapeCSV(person.titles.join('; '))
+                ]);
+            });
+
+            const csv = rows.map(r => r.join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'extracted_data.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function clearAll() {
+            document.getElementById('input-text').value = '';
+            document.getElementById('results').classList.add('hidden');
+            document.getElementById('stats').classList.add('hidden');
+            document.getElementById('error').classList.add('hidden');
+            extractedPeople = [];
+            document.getElementById('input-text').focus();
+        }
+
+        // Ctrl+Enter to extract
+        document.getElementById('input-text').addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') extractData();
+        });
+    </script>
+</body>
+</html>
