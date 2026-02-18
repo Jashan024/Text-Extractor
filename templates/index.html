@@ -46,6 +46,19 @@
                     Clear
                 </button>
             </div>
+            <div class="source-row">
+                <label class="source-label" for="source-select">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                    </svg>
+                    Source
+                </label>
+                <select id="source-select" class="source-select">
+                    <option value="indeed" selected>📋 Indeed</option>
+                </select>
+            </div>
             <textarea id="input-text" placeholder="Paste structured profile text here...&#10;&#10;Example:&#10;Elizabeth Rupert&#10;Montandon, PA&#10;Relevant Work Experience&#10;Register&#10;The GIANT Company, 2025 - Present"></textarea>
             <div class="input-actions">
                 <button id="extract-btn" class="btn-primary" onclick="extractData()">
