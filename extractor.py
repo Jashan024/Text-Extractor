@@ -132,8 +132,8 @@ def extract_entities(text, source='indeed'):
 # SignalHire Parser
 # =========================================================================
 
-# Profile start: "* X" where X is a single capital letter
-SH_PROFILE_START = re.compile(r'^\*\s+[A-Z]$')
+# Profile start: "* X" where X is a single capital letter, OR just a single capital letter
+SH_PROFILE_START = re.compile(r'^(?:\*\s+)?[A-Z]$')
 
 # Title line: ends with " at"
 SH_TITLE_LINE = re.compile(r'^(.+)\s+at$', re.IGNORECASE)
