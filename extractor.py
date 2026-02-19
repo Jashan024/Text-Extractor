@@ -127,6 +127,8 @@ def extract_entities(text, source='indeed'):
         return extract_signalhire(text)
     if source == 'linkedin_xray':
         return extract_linkedin_xray(text)
+    if source == 'linkedin_rps':
+        return extract_linkedin_rps(text)
     return extract_indeed(text)
 
 
@@ -684,6 +686,325 @@ def extract_linkedin_xray(text):
             continue
 
         i += 1
+
+    return _build_output(people)
+
+
+# =========================================================================
+# LinkedIn RPS (Recruiter Project Search) Parser
+# =========================================================================
+
+# Profile start: "N. Select ..." where N is a number
+RPS_PROFILE_START = re.compile(r'^(\d+)\.\s*Select\b\s*(.*)?$')
+
+# Standalone "Select Name" (for banner-interrupted profiles)
+RPS_SELECT_STANDALONE = re.compile(r'^Select\s+(.+)$')
+
+# Connection degree line
+RPS_CONNECTION_LINE = re.compile(
+    r'(First|Second|Third)\s+degree\s+connection|Out\s+of\s+network',
+    re.IGNORECASE
+)
+
+# Section markers — everything after these until next profile is noise
+RPS_SECTION_MARKERS = [
+    re.compile(r'^ExperienceProfile\s+experience', re.IGNORECASE),
+    re.compile(r'^EducationProfile\s+education', re.IGNORECASE),
+    re.compile(r'^Profile\s+skills\s+match', re.IGNORECASE),
+    re.compile(r'^Profile\s+interest\s+row', re.IGNORECASE),
+]
+
+# Industry tag line — starts with middle dot
+RPS_INDUSTRY_TAG = re.compile(r'^[·•]\s*\S')
+
+# Skip patterns — noise lines within/between profiles
+RPS_SKIP_PATTERNS = [
+    re.compile(r'^Show\s+all\s+\(\d+\)', re.IGNORECASE),
+    re.compile(r'^\d+\+?\s+years?\s+of\s+', re.IGNORECASE),
+    re.compile(r'^\*\s*Save\s+to\s+project', re.IGNORECASE),
+    re.compile(r'^Save\s+\w+\s+to\s+a\s+project', re.IGNORECASE),
+    re.compile(r'^Message\s+\w', re.IGNORECASE),
+    re.compile(r'^More\s+actions\s+for\s+', re.IGNORECASE),
+    re.compile(r'^Send\s+message\s+disabled', re.IGNORECASE),
+    re.compile(r'^Unlock\s+profile', re.IGNORECASE),
+    re.compile(r'^\*\s*$'),
+    re.compile(r'^\s+\d+\.\s+.+[·•]\s*\d{4}'),  # numbered experience/edu entries
+    re.compile(r'^\s+\d+\.\s+.+,\s*.+$'),  # education entries like "1. University, Degree"
+    re.compile(r'^Enhanced\s+by\s+resume', re.IGNORECASE),
+    re.compile(r'^View\s+Talent\s+Insights', re.IGNORECASE),
+]
+
+# Pagination noise at top/bottom
+RPS_PAGINATION_NOISE = [
+    re.compile(r'^\d+\s*[–-]\s*\d+\s*Showing\s+results', re.IGNORECASE),
+    re.compile(r'^Showing\s+results', re.IGNORECASE),
+    re.compile(r'^\d+\.\s*\d+Page\s+\d+', re.IGNORECASE),
+    re.compile(r'^Next$', re.IGNORECASE),
+    re.compile(r'^Previous$', re.IGNORECASE),
+    re.compile(r'^Go\s+to\s+', re.IGNORECASE),
+    re.compile(r'^Unlock\s+recommended\s+matches', re.IGNORECASE),
+    re.compile(r'^close\s+banner$', re.IGNORECASE),
+    re.compile(r'^Create\s+a\s+project', re.IGNORECASE),
+    re.compile(r'^Page\s+\d+', re.IGNORECASE),
+]
+
+
+def is_rps_section_marker(line):
+    """Check if line is a section header (Experience/Education/Skills)."""
+    stripped = line.strip()
+    for pat in RPS_SECTION_MARKERS:
+        if pat.search(stripped):
+            return True
+    return False
+
+
+def is_rps_skip(line):
+    """Check if line is noise within a profile."""
+    stripped = line.strip()
+    if not stripped:
+        return True
+    for pat in RPS_SKIP_PATTERNS:
+        if pat.search(stripped):
+            return True
+    for pat in RPS_PAGINATION_NOISE:
+        if pat.search(stripped):
+            return True
+    return False
+
+
+def extract_rps_name(raw_name):
+    """Clean up a LinkedIn RPS name — strip credentials, Dr. prefix."""
+    if not raw_name:
+        return ''
+    stripped = raw_name.strip()
+    if stripped.lower() == 'linkedin member':
+        return 'LinkedIn Member'
+    # Use existing credential stripper
+    cleaned = strip_li_credentials(stripped)
+    # Remove "Dr." prefix
+    cleaned = re.sub(r'^Dr\.\s*', '', cleaned).strip()
+    # Catch-all: strip trailing comma-separated uppercase tokens (credentials)
+    cleaned = re.sub(r'(?:,\s*[A-Z]{2,6})+\s*$', '', cleaned).strip()
+    # Clean up trailing commas
+    cleaned = cleaned.rstrip(',').strip()
+    return cleaned
+
+
+def extract_rps_title(headline):
+    """Extract job title from a headline line. Returns empty if just a company."""
+    if not headline:
+        return ''
+    stripped = headline.strip()
+    # If starts with "at " — it's just a company reference
+    if re.match(r'^at\s+', stripped, re.IGNORECASE):
+        return ''
+    # If contains " at ", take everything before it
+    at_match = re.match(r'^(.+?)\s+at\s+', stripped, re.IGNORECASE)
+    if at_match:
+        title = at_match.group(1).strip()
+        # Clean up trailing pipe separators
+        title = title.rstrip('|').strip()
+        return title
+    # If headline has pipe separators, take the first segment
+    if '|' in stripped:
+        first_segment = stripped.split('|')[0].strip()
+        if first_segment:
+            return first_segment
+    # Otherwise the whole line is the title (standalone like "DDS", "Dentist")
+    # But skip lines that look like long descriptions/bios
+    if len(stripped) > 120:
+        return ''
+    return stripped
+
+
+def extract_rps_location(line):
+    """Validate/normalize a location line from LinkedIn RPS."""
+    stripped = line.strip()
+    if not stripped:
+        return ''
+    # "City, State, United States"
+    if re.match(r'^[A-Za-z][A-Za-z .\'()-]+,\s*[A-Za-z]', stripped):
+        return stripped
+    # "Greater X Area"
+    if re.search(r'\bArea$', stripped):
+        return stripped
+    # Bare country
+    if stripped in ('United States', 'Canada', 'United Kingdom'):
+        return stripped
+    return stripped
+
+
+def extract_linkedin_rps(text):
+    """
+    Extract names, locations, and job titles from LinkedIn Recruiter
+    Project Search (RPS) results.
+
+    Each profile block follows this structure:
+        N. Select [Name, credentials]
+        [Name repeated]
+        Third degree connection· 3rd    (or "Out of network")
+        [Title/headline]
+        [Location]
+        · [Industry]
+        ExperienceProfile experience
+        ...
+        EducationProfile education
+        ...
+        Profile skills match...
+        ...
+        * Save to project...
+        Message [Name]
+        More actions for [Name]
+    """
+    lines = text.split('\n')
+    people = []
+
+    # Phase 1: Find all profile start indices
+    profile_starts = []
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        m = RPS_PROFILE_START.match(stripped)
+        if m:
+            profile_starts.append(idx)
+
+    # Phase 2: Also detect orphaned "Select Name" lines (banner edge case)
+    # These appear after banner noise without a number prefix
+    # e.g. "25. Unlock recommended matches..." followed by "Select Betsy Carmack, DMD"
+    # Build set of names already found in Phase 1
+    phase1_names = set()
+    for start in profile_starts:
+        first = lines[start].strip()
+        m_p1 = RPS_PROFILE_START.match(first)
+        if m_p1 and m_p1.group(2):
+            p1_name = extract_rps_name(m_p1.group(2).strip())
+            if p1_name:
+                phase1_names.add(p1_name.lower())
+
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        sm = RPS_SELECT_STANDALONE.match(stripped)
+        if sm and idx not in [s for s in profile_starts]:
+            orphan_name = extract_rps_name(sm.group(1).strip())
+            # Only add if this name wasn't already found in Phase 1
+            if orphan_name and orphan_name.lower() not in phase1_names:
+                profile_starts.append(idx)
+
+    profile_starts.sort()
+
+    # Phase 3: Process each profile
+    for p_idx, start in enumerate(profile_starts):
+        end = profile_starts[p_idx + 1] if p_idx + 1 < len(profile_starts) else len(lines)
+
+        first_line = lines[start].strip()
+
+        # Extract name from the "Select" line
+        m = RPS_PROFILE_START.match(first_line)
+        if m:
+            after_select = m.group(2).strip() if m.group(2) else ''
+        else:
+            sm = RPS_SELECT_STANDALONE.match(first_line)
+            after_select = sm.group(1).strip() if sm else ''
+
+        i = start + 1
+        name = after_select if after_select else ''
+
+        # If no name on the Select line, find it on the next meaningful line
+        if not name:
+            while i < end:
+                curr = lines[i].strip()
+                if not curr or is_rps_skip(curr):
+                    i += 1
+                    continue
+                # Check for standalone "Select Name" continuation
+                sm = RPS_SELECT_STANDALONE.match(curr)
+                if sm:
+                    name = sm.group(1).strip()
+                    i += 1
+                    break
+                name = curr
+                i += 1
+                break
+
+        if not name:
+            continue
+
+        clean_name = extract_rps_name(name)
+
+        # Skip duplicate name line (name repeated)
+        while i < end:
+            curr = lines[i].strip()
+            if not curr:
+                i += 1
+                continue
+            # Check if this line is the duplicate name
+            if extract_rps_name(curr) == clean_name or curr == name:
+                i += 1
+            break
+
+        # Skip connection degree line
+        while i < end:
+            curr = lines[i].strip()
+            if not curr:
+                i += 1
+                continue
+            if RPS_CONNECTION_LINE.search(curr):
+                i += 1
+                break
+            # If we hit a section marker, stop looking
+            if is_rps_section_marker(curr):
+                break
+            # If this doesn't look like a connection line, it might be
+            # the title — stop scanning
+            break
+
+        # Next non-blank, non-noise line is the title/headline
+        title = ''
+        while i < end:
+            curr = lines[i].strip()
+            if not curr:
+                i += 1
+                continue
+            if is_rps_section_marker(curr):
+                break
+            if RPS_INDUSTRY_TAG.match(curr):
+                i += 1
+                continue
+            if is_rps_skip(curr):
+                i += 1
+                continue
+            title = curr
+            i += 1
+            break
+
+        # Next non-blank, non-noise line is the location
+        location = ''
+        while i < end:
+            curr = lines[i].strip()
+            if not curr:
+                i += 1
+                continue
+            if is_rps_section_marker(curr):
+                break
+            if RPS_INDUSTRY_TAG.match(curr):
+                i += 1
+                continue
+            if is_rps_skip(curr):
+                i += 1
+                continue
+            location = curr
+            i += 1
+            break
+
+        # Clean up
+        clean_title = extract_rps_title(title)
+        clean_location = extract_rps_location(location)
+
+        person = {
+            'name': clean_name,
+            'location': clean_location,
+            'titles': [clean_title] if clean_title else [],
+        }
+        people.append(person)
 
     return _build_output(people)
 
