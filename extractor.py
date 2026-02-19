@@ -822,6 +822,10 @@ def extract_rps_location(line):
     stripped = line.strip()
     if not stripped:
         return ''
+    # Strip industry tag suffix: "· Dentists", "· Medical Practices", etc.
+    stripped = re.split(r'\s*[·•]\s*', stripped)[0].strip()
+    if not stripped:
+        return ''
     # "City, State, United States"
     if re.match(r'^[A-Za-z][A-Za-z .\'()-]+,\s*[A-Za-z]', stripped):
         return stripped
@@ -859,37 +863,33 @@ def extract_linkedin_rps(text):
     lines = text.split('\n')
     people = []
 
-    # Phase 1: Find all profile start indices
+    # Find all profile start indices — detect both numbered ("N. Select Name")
+    # and bare ("Select Name") formats in a single pass
     profile_starts = []
+    seen_names = set()
     for idx, line in enumerate(lines):
         stripped = line.strip()
+        # Try numbered format first: "N. Select Name"
         m = RPS_PROFILE_START.match(stripped)
         if m:
             profile_starts.append(idx)
-
-    # Phase 2: Also detect orphaned "Select Name" lines (banner edge case)
-    # These appear after banner noise without a number prefix
-    # e.g. "25. Unlock recommended matches..." followed by "Select Betsy Carmack, DMD"
-    # Build set of names already found in Phase 1
-    phase1_names = set()
-    for start in profile_starts:
-        first = lines[start].strip()
-        m_p1 = RPS_PROFILE_START.match(first)
-        if m_p1 and m_p1.group(2):
-            p1_name = extract_rps_name(m_p1.group(2).strip())
-            if p1_name:
-                phase1_names.add(p1_name.lower())
-
-    for idx, line in enumerate(lines):
-        stripped = line.strip()
+            raw = m.group(2).strip() if m.group(2) else ''
+            if raw:
+                n = extract_rps_name(raw)
+                if n:
+                    seen_names.add(n.lower())
+            continue
+        # Try bare format: "Select Name" (browser copy-paste or banner edge case)
         sm = RPS_SELECT_STANDALONE.match(stripped)
-        if sm and idx not in [s for s in profile_starts]:
-            orphan_name = extract_rps_name(sm.group(1).strip())
-            # Only add if this name wasn't already found in Phase 1
-            if orphan_name and orphan_name.lower() not in phase1_names:
+        if sm:
+            orphan = extract_rps_name(sm.group(1).strip())
+            if orphan and orphan.lower() not in seen_names:
                 profile_starts.append(idx)
-
-    profile_starts.sort()
+                seen_names.add(orphan.lower())
+            continue
+        # Bare "Select" alone (LinkedIn Member profiles where name is on next line)
+        if stripped == 'Select':
+            profile_starts.append(idx)
 
     # Phase 3: Process each profile
     for p_idx, start in enumerate(profile_starts):
@@ -930,16 +930,17 @@ def extract_linkedin_rps(text):
 
         clean_name = extract_rps_name(name)
 
-        # Skip duplicate name line (name repeated)
+        # Skip ALL duplicate name lines (real data may have name 2-3 times)
         while i < end:
             curr = lines[i].strip()
             if not curr:
                 i += 1
                 continue
-            # Check if this line is the duplicate name
+            # Check if this line is a duplicate of the name
             if extract_rps_name(curr) == clean_name or curr == name:
                 i += 1
-            break
+                continue  # keep skipping duplicates
+            break  # non-duplicate found, stop
 
         # Skip connection degree line
         while i < end:
