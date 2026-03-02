@@ -1,7 +1,4 @@
 import re
-import spacy
-
-nlp = spacy.load("en_core_web_sm")
 
 # Pattern: "City, ST"
 LOCATION_PATTERN = re.compile(

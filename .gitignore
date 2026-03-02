@@ -29,5 +29,12 @@ desktop.ini
 # Logs
 *.log
 
-# spaCy model cache
+# spaCy model cache (legacy)
 en_core_web_sm*/
+
+# Pytest
+.pytest_cache/
+
+# Coverage
+htmlcov/
+.coverage
