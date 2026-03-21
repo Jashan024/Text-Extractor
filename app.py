@@ -1,15 +1,17 @@
 import os
 import logging
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 from extractor import extract_entities
+from auth import login_required, store_otp, verify_otp, send_otp_email, generate_otp
 
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-prod")
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MB max payload
 
 # ---------------------------------------------------------------------------
@@ -49,6 +51,7 @@ def set_security_headers(response):
 # ---------------------------------------------------------------------------
 @app.route("/")
 @limiter.limit("30 per minute")
+@login_required
 def index():
     return render_template("index.html")
 
@@ -56,6 +59,9 @@ def index():
 @app.route("/extract", methods=["POST"])
 @limiter.limit("30 per minute")
 def extract():
+    if "user_email" not in session:
+        return jsonify({"error": "Authentication required"}), 401
+
     data = request.get_json(silent=True)
     if not data or not isinstance(data.get("text"), str):
         return jsonify({"error": "Invalid request — JSON with 'text' key required"}), 400
@@ -82,6 +88,57 @@ def extract():
         return jsonify({"error": "Extraction failed. Please check your input."}), 500
 
     return jsonify(results)
+
+
+@app.route("/login")
+@limiter.limit("30 per minute")
+def login():
+    if "user_email" in session:
+        return redirect(url_for("index"))
+    return render_template("login.html")
+
+
+@app.route("/auth/send-otp", methods=["POST"])
+@limiter.limit("5 per minute")
+def send_otp():
+    data = request.get_json(silent=True)
+    if not data or not isinstance(data.get("email"), str) or "@" not in data["email"]:
+        return jsonify({"error": "Valid email required"}), 400
+
+    email = data["email"].strip().lower()
+    otp = generate_otp()
+
+    try:
+        store_otp(email, otp)
+        send_otp_email(email, otp)
+    except Exception:
+        app.logger.exception("Failed to send OTP")
+        return jsonify({"error": "Failed to send code. Try again."}), 500
+
+    return jsonify({"message": "Code sent"})
+
+
+@app.route("/auth/verify-otp", methods=["POST"])
+@limiter.limit("10 per minute")
+def verify_otp_route():
+    data = request.get_json(silent=True)
+    if not data or not data.get("email") or not data.get("otp"):
+        return jsonify({"error": "Email and code required"}), 400
+
+    email = data["email"].strip().lower()
+    otp = data["otp"].strip()
+
+    if verify_otp(email, otp):
+        session["user_email"] = email
+        return jsonify({"message": "Verified", "redirect": "/"})
+    else:
+        return jsonify({"error": "Invalid or expired code"}), 401
+
+
+@app.route("/auth/logout")
+def logout():
+    session.pop("user_email", None)
+    return redirect(url_for("login"))
 
 
 @app.route("/health")
