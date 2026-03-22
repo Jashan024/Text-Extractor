@@ -111,9 +111,9 @@ def send_otp():
     try:
         store_otp(email, otp)
         send_otp_email(email, otp)
-    except Exception:
+    except Exception as e:
         app.logger.exception("Failed to send OTP")
-        return jsonify({"error": "Failed to send code. Try again."}), 500
+        return jsonify({"error": f"Failed to send code: {str(e)}"}), 500
 
     return jsonify({"message": "Code sent"})
 
