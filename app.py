@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 def set_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "ALLOW-FROM https://gleel2.com"
-    response.headers["Content-Security-Policy"] = "frame-ancestors 'self' https://gleel2.com https://*.gleel2.com"
+    response.headers["Content-Security-Policy"] = "frame-ancestors 'self' https://gleel2.com https://*.gleel2.com http://localhost:* http://127.0.0.1:*"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
