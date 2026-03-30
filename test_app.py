@@ -74,7 +74,7 @@ class TestRoutes:
     def test_security_headers_present(self, client):
         resp = client.get("/health")
         assert resp.headers.get("X-Content-Type-Options") == "nosniff"
-        assert resp.headers.get("X-Frame-Options") == "SAMEORIGIN"
+        assert "gleel2.com" in resp.headers.get("X-Frame-Options", "")
 
 
 # =========================================================================
