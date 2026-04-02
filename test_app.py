@@ -268,3 +268,56 @@ class TestAuthRoutes:
                            data=json.dumps({}),
                            content_type="application/json")
         assert resp.status_code == 400
+
+
+# =========================================================================
+# Access code route tests
+# =========================================================================
+
+class TestAccessCodeRoutes:
+    def test_access_code_requires_otp_first(self, client):
+        """Must verify OTP before access code step."""
+        resp = client.post("/auth/verify-access-code",
+                           data=json.dumps({"code": "1245"}),
+                           content_type="application/json")
+        assert resp.status_code == 401
+        data = json.loads(resp.data)
+        assert "OTP verification required" in data["error"]
+
+    def test_access_code_requires_code_field(self, client):
+        """Must provide a code in the request body."""
+        with client.session_transaction() as sess:
+            sess["otp_verified"] = True
+            sess["pending_email"] = "test@example.com"
+        resp = client.post("/auth/verify-access-code",
+                           data=json.dumps({}),
+                           content_type="application/json")
+        assert resp.status_code == 400
+
+    def test_valid_access_code_grants_access(self, client):
+        """Correct code completes login."""
+        with client.session_transaction() as sess:
+            sess["otp_verified"] = True
+            sess["pending_email"] = "test@example.com"
+        resp = client.post("/auth/verify-access-code",
+                           data=json.dumps({"code": "1245"}),
+                           content_type="application/json")
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert data["redirect"] == "/"
+        # Session should now have user_email set
+        with client.session_transaction() as sess:
+            assert sess["user_email"] == "test@example.com"
+            assert "otp_verified" not in sess
+
+    def test_invalid_access_code_rejected(self, client):
+        """Wrong code returns 401."""
+        with client.session_transaction() as sess:
+            sess["otp_verified"] = True
+            sess["pending_email"] = "test@example.com"
+        resp = client.post("/auth/verify-access-code",
+                           data=json.dumps({"code": "0000"}),
+                           content_type="application/json")
+        assert resp.status_code == 401
+        data = json.loads(resp.data)
+        assert "Invalid access code" in data["error"]

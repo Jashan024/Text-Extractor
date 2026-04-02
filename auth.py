@@ -119,6 +119,15 @@ def send_otp_email(email: str, otp: str):
 
 
 # ---------------------------------------------------------------------------
+# Access code verification
+# ---------------------------------------------------------------------------
+def verify_access_code(code: str) -> bool:
+    """Check the user-supplied access code against the configured value."""
+    expected = os.environ.get("ACCESS_CODE", "1245")
+    return code.strip() == expected
+
+
+# ---------------------------------------------------------------------------
 # Auth decorator
 # ---------------------------------------------------------------------------
 def login_required(f):

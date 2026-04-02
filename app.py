@@ -5,7 +5,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 from extractor import extract_entities
-from auth import login_required, store_otp, verify_otp, send_otp_email, generate_otp
+from auth import login_required, store_otp, verify_otp, send_otp_email, generate_otp, verify_access_code
 
 # ---------------------------------------------------------------------------
 # App factory
@@ -130,10 +130,31 @@ def verify_otp_route():
     otp = data["otp"].strip()
 
     if verify_otp(email, otp):
-        session["user_email"] = email
-        return jsonify({"message": "Verified", "redirect": "/"})
+        session["otp_verified"] = True
+        session["pending_email"] = email
+        return jsonify({"message": "OTP verified", "next": "access_code"})
     else:
         return jsonify({"error": "Invalid or expired code"}), 401
+
+
+@app.route("/auth/verify-access-code", methods=["POST"])
+@limiter.limit("5 per minute")
+def verify_access_code_route():
+    if not session.get("otp_verified"):
+        return jsonify({"error": "OTP verification required first"}), 401
+
+    data = request.get_json(silent=True)
+    if not data or not data.get("code"):
+        return jsonify({"error": "Access code required"}), 400
+
+    code = data["code"].strip()
+
+    if verify_access_code(code):
+        session["user_email"] = session.pop("pending_email")
+        session.pop("otp_verified", None)
+        return jsonify({"message": "Verified", "redirect": "/"})
+    else:
+        return jsonify({"error": "Invalid access code"}), 401
 
 
 @app.route("/auth/logout")
