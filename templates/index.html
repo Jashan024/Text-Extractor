@@ -56,23 +56,15 @@
                     Clear
                 </button>
             </div>
-            <div class="source-row">
-                <label class="source-label" for="source-select">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="2" y1="12" x2="22" y2="12"></line>
-                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                    </svg>
-                    Source
-                </label>
-                <select id="source-select" class="source-select" onchange="updatePlaceholder()">
-                    <option value="indeed" selected>📋 Indeed</option>
-                    <option value="signalhire">🔍 SignalHire</option>
-                    <option value="linkedin_xray">🔗 LinkedIn X-ray</option>
-                    <option value="linkedin_rps">🏢 LinkedIn RPS</option>
-                </select>
+            <div class="ai-badge">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                    <path d="M2 17l10 5 10-5"></path>
+                    <path d="M2 12l10 5 10-5"></path>
+                </svg>
+                AI-powered &mdash; paste from any recruiter source
             </div>
-            <textarea id="input-text" placeholder="Paste structured profile text here...&#10;&#10;Example:&#10;Elizabeth Rupert&#10;Montandon, PA&#10;Relevant Work Experience&#10;Register&#10;The GIANT Company, 2025 - Present"></textarea>
+            <textarea id="input-text" placeholder="Paste profile text from Indeed, LinkedIn, SignalHire, LinkedIn Recruiter — anything works.&#10;&#10;The AI will figure out the format and extract names, locations, and titles."></textarea>
             <div class="input-actions">
                 <label class="append-toggle" title="Keep previous results and add new ones">
                     <input type="checkbox" id="append-check">
@@ -197,7 +189,7 @@
                 const response = await fetch('/extract', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text, source: document.getElementById('source-select').value })
+                    body: JSON.stringify({ text })
                 });
 
                 if (!response.ok) {
@@ -374,20 +366,6 @@
             extractedPeople = [];
             batchCount = 0;
             document.getElementById('input-text').focus();
-        }
-
-        function updatePlaceholder() {
-            const source = document.getElementById('source-select').value;
-            const ta = document.getElementById('input-text');
-            if (source === 'signalhire') {
-                ta.placeholder = 'Paste SignalHire search results here...\n\nExample:\n* S\nSusan Grimes\nDentist at\n__Shelburne Village Dentistry__\nShelburne, Vermont, United States\n37 years exp';
-            } else if (source === 'linkedin_xray') {
-                ta.placeholder = 'Paste LinkedIn X-ray (Google) search results here...\n\nExample:\nDana J. Ellis BS,RN - Registered Nurse at The University of ...\nLinkedIn \u00b7 Dana J. Ellis BS,RN\n90+ followers\nBurlington, Vermont, United States \u00b7 Med/Surg Resource Staff RN \u00b7 The University of Vermont Medical Center';
-            } else if (source === 'linkedin_rps') {
-                ta.placeholder = 'Paste LinkedIn Recruiter search results here...\n\nExample:\n1. Select John Smith, DDS\nJohn Smith\nThird degree connection\u00b7 3rd\nGeneral Dentist at Main Street Dental\nBurlington, Vermont, United States\n\u00b7 Dentists';
-            } else {
-                ta.placeholder = 'Paste structured profile text here...\n\nExample:\nElizabeth Rupert\nMontandon, PA\nRelevant Work Experience\nRegister\nThe GIANT Company, 2025 - Present';
-            }
         }
 
         // Ctrl+Enter to extract

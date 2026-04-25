@@ -3,3 +3,5 @@ gunicorn==22.0.0
 flask-limiter==3.8.0
 resend==2.5.1
 supabase==2.11.0
+cerebras-cloud-sdk>=1.0
+python-dotenv>=1.0

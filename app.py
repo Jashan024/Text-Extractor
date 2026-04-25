@@ -1,10 +1,13 @@
 import os
 import logging
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-from extractor import extract_entities
+load_dotenv()
+
+from llm_extractor import extract_with_llm
 from auth import login_required, store_otp, verify_otp, send_otp_email, generate_otp, verify_access_code
 
 # ---------------------------------------------------------------------------
@@ -68,25 +71,22 @@ def extract():
         return jsonify({"error": "Invalid request — JSON with 'text' key required"}), 400
 
     text = data["text"]
-    source = data.get("source", "indeed")
-
-    # Validate source to prevent unexpected input
-    allowed_sources = {"indeed", "signalhire", "linkedin_xray", "linkedin_rps"}
-    if source not in allowed_sources:
-        return jsonify({"error": f"Invalid source. Must be one of: {', '.join(sorted(allowed_sources))}"}), 400
 
     if not text.strip():
         return jsonify({"error": "No text provided"}), 400
 
-    # Cap input length to prevent regex abuse (ReDoS)
+    # Cap input length to keep LLM requests reasonable
     if len(text) > 500_000:
         return jsonify({"error": "Input too long — max 500,000 characters"}), 400
 
+    if not os.environ.get("CEREBRAS_API_KEY"):
+        return jsonify({"error": "AI extraction is not configured. CEREBRAS_API_KEY is missing."}), 503
+
     try:
-        results = extract_entities(text, source=source)
-    except Exception as exc:
-        app.logger.exception("Extraction failed")
-        return jsonify({"error": "Extraction failed. Please check your input."}), 500
+        results = extract_with_llm(text)
+    except Exception:
+        app.logger.exception("LLM extraction failed")
+        return jsonify({"error": "AI service is temporarily unavailable. Please try again in a moment."}), 503
 
     return jsonify(results)
 
